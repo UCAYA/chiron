@@ -202,16 +202,16 @@ module Json =
                 let aOR = primaryObjectReader jObj
                 let bOR = dependentObjectReader jObj
                 match aOR, bOR with
-                | JPass (Some a), JPass bO ->
+                | Ok (Some a), Ok bO ->
                     JsonResult.pass (Some (a, bO))
-                | JPass None, JPass (Some _) ->
+                | Ok None, Ok (Some _) ->
                     JsonResult.fail (SingleFailure (DeserializationError (typeof<'b>, exn (sprintf "Property '%s' requires property '%s' to be specified" dependentKey primaryKey))))
-                | JPass None, JPass None ->
+                | Ok None, Ok None ->
                     JsonResult.pass None
-                | JFail err1, JFail err2 ->
+                | Error err1, Error err2 ->
                     JsonResult.fail (JsonFailure.mappend err1 err2)
-                | JFail err, JPass _
-                | JPass _, JFail err ->
+                | Error err, Ok _
+                | Ok _, Error err ->
                     JsonResult.fail err
 
         let uri =

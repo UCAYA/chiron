@@ -197,7 +197,7 @@ module D = Chiron.Serialization.Json.Decode
     // member x.Setup() =
     //     let result = arrayAlt3 testList
     //     match result with
-    //     | JPass _ -> ()
+    //     | Ok _ -> ()
     //     | _ -> failwith (JsonResult.summarize result)
 
     // [<Benchmark>]
@@ -250,7 +250,7 @@ module D = Chiron.Serialization.Json.Decode
     // member x.Setup() =
     //     let result = arrayAlt3 testList
     //     match result with
-    //     | JPass _ -> failwith "Should be failures, but were none"
+    //     | Ok _ -> failwith "Should be failures, but were none"
     //     | _ -> ()
 
     // [<Benchmark>]

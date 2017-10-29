@@ -32,8 +32,8 @@ type ChironErrorPolicy =
     | ContinueOnError
 
 type JsonResult<'a> =
-    | JPass of 'a
-    | JFail of JsonFailure
+    | Ok of 'a
+    | Error of JsonFailure
 
 [<RequireQualifiedAccess>]
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]

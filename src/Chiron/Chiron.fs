@@ -76,9 +76,7 @@ type ChironErrorPolicy =
     | StopOnFirstError
     | ContinueOnError
 
-type JsonResult<'a> =
-    | JPass of 'a
-    | JFail of JsonFailure
+type JsonResult<'a> = Result<'a,JsonFailure>
 
 [<RequireQualifiedAccess>]
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
@@ -137,13 +135,13 @@ module JsonFailure =
             sb.ToString()
 
 module JsonResult =
-    let inline pass a = JPass a
-    let inline fail f = JFail f
-    let inline fails fs = JFail (MultipleFailures fs)
+    let inline pass a = Ok a
+    let inline fail f = Error f
+    let inline fails fs = Error (MultipleFailures fs)
 
     let getOrThrow : JsonResult<'a> -> 'a = function
-        | JPass x -> x
-        | JFail f -> failwith (JsonFailure.toStrings f |> String.concat "\n")
+        | Ok x -> x
+        | Error f -> failwith (JsonFailure.toStrings f |> String.concat "\n")
 
     let raise e = fail (SingleFailure (OtherError e))
     let typeMismatch expected json = fail (SingleFailure (TypeMismatch (expected, JsonMemberType.ofJson json)))
@@ -155,44 +153,44 @@ module JsonResult =
 
     let inline bind (a2bR: 'a -> JsonResult<'b>) (aR : JsonResult<'a>) : JsonResult<'b> =
         match aR with
-        | JPass a -> a2bR a
-        | JFail x -> fail x
+        | Ok a -> a2bR a
+        | Error x -> fail x
 
     let inline map (a2b: 'a -> 'b) (aR : JsonResult<'a>) : JsonResult<'b> =
         match aR with
-        | JPass a -> pass (a2b a)
-        | JFail x -> fail x
+        | Ok a -> pass (a2b a)
+        | Error x -> fail x
 
     let inline apply (aR: JsonResult<'a>) (a2Rb: JsonResult<'a -> 'b>) : JsonResult<'b> =
         match a2Rb, aR with
-        | JPass a2b, JPass a -> pass (a2b a)
-        | JFail e1, JFail e2 -> fail (JsonFailure.mappend e1 e2)
-        | JFail e, _ | _, JFail e -> fail e
+        | Ok a2b, Ok a -> pass (a2b a)
+        | Error e1, Error e2 -> fail (JsonFailure.mappend e1 e2)
+        | Error e, _ | _, Error e -> fail e
 
     let applyDelayedWithPolicy (policy: ChironErrorPolicy) (c2aR: 'c -> JsonResult<'a>) (c: 'c) (a2Rb: JsonResult<'a -> 'b>) : JsonResult<'b> =
         match a2Rb with
-        | JPass a2b ->
+        | Ok a2b ->
             match c2aR c with
-            | JPass a -> pass (a2b a)
-            | JFail e -> fail e
-        | JFail e1 ->
+            | Ok a -> pass (a2b a)
+            | Error e -> fail e
+        | Error e1 ->
             match policy with
             | StopOnFirstError -> fail e1
             | ContinueOnError ->
                 match c2aR c with
-                | JPass a -> fail e1
-                | JFail e2 -> fail (JsonFailure.mappend e1 e2)
+                | Ok a -> fail e1
+                | Error e2 -> fail (JsonFailure.mappend e1 e2)
 
     let applyDelayedWithPolicyAlt (policy: ChironErrorPolicy) : ('c -> JsonResult<'a>) -> 'c -> JsonResult<'a -> 'b> -> JsonResult<'b> =
         match policy with
         | StopOnFirstError ->
             fun c2aR c a2Rb ->
                 match a2Rb with
-                | JPass a2b ->
+                | Ok a2b ->
                     match c2aR c with
-                    | JPass a -> pass (a2b a)
-                    | JFail e -> fail e
-                | JFail e1 -> fail e1
+                    | Ok a -> pass (a2b a)
+                    | Error e -> fail e
+                | Error e1 -> fail e1
         | ContinueOnError ->
             fun c2aR c a2Rb -> apply (c2aR c) a2Rb
 
@@ -232,15 +230,15 @@ module Decoder =
     let inline applyWithContinueOnError (s2aR: Decoder<'s,'a>) (s2Ra2b: Decoder<'s,'a -> 'b>) : Decoder<'s,'b> =
         fun s ->
             match s2Ra2b s, s2aR s with
-            | JPass a2b, JPass a -> JsonResult.pass (a2b a)
-            | JFail e1, JFail e2 -> JsonResult.fail (JsonFailure.mappend e1 e2)
-            | JFail e, _ | _, JFail e -> JsonResult.fail e
+            | Ok a2b, Ok a -> JsonResult.pass (a2b a)
+            | Error e1, Error e2 -> JsonResult.fail (JsonFailure.mappend e1 e2)
+            | Error e, _ | _, Error e -> JsonResult.fail e
 
     let inline applyWithStopOnFirstError (s2aR: Decoder<'s,'a>) (s2Ra2b: Decoder<'s,'a -> 'b>) : Decoder<'s,'b> =
         fun s ->
             match s2Ra2b s with
-            | JPass a2b -> s2aR s |> JsonResult.map a2b
-            | JFail e -> JsonResult.fail e
+            | Ok a2b -> s2aR s |> JsonResult.map a2b
+            | Error e -> JsonResult.fail e
 
     let applyWithPolicy (policy: ChironErrorPolicy) : Decoder<'s,'a> -> Decoder<'s,'a -> 'b> -> Decoder<'s,'b> =
         match policy with
@@ -283,20 +281,20 @@ module Decoder =
     let withPropertyTag p (s2aR : Decoder<'s,'a>) : Decoder<'s,'a> =
         fun s ->
             match s2aR s with
-            | JPass a -> JsonResult.pass a
-            | JFail f -> JsonResult.failWithTag (PropertyTag p) f
+            | Ok a -> JsonResult.pass a
+            | Error f -> JsonResult.failWithTag (PropertyTag p) f
 
     let withIndexTag i (s2aR : Decoder<'s,'a>) : Decoder<'s,'a> =
         fun s ->
             match s2aR s with
-            | JPass a -> JsonResult.pass a
-            | JFail f -> JsonResult.failWithTag (IndexTag i) f
+            | Ok a -> JsonResult.pass a
+            | Error f -> JsonResult.failWithTag (IndexTag i) f
 
     let withChoiceTag c (s2aR : Decoder<'s,'a>) : Decoder<'s,'a> =
         fun s ->
             match s2aR s with
-            | JPass a -> JsonResult.pass a
-            | JFail f -> JsonResult.failWithTag (ChoiceTag c) f
+            | Ok a -> JsonResult.pass a
+            | Error f -> JsonResult.failWithTag (ChoiceTag c) f
 
     let fromThrowingConverter (convert: 's -> 'a) : Decoder<'s,'a> =
         fun s ->
@@ -307,20 +305,20 @@ module Decoder =
     let inline withPropertyTagInline p (s2aR : Decoder<'s,'a>) : Decoder<'s,'a> =
         fun s ->
             match s2aR s with
-            | JPass a -> JsonResult.pass a
-            | JFail f -> JsonResult.failWithTag (PropertyTag p) f
+            | Ok a -> JsonResult.pass a
+            | Error f -> JsonResult.failWithTag (PropertyTag p) f
 
     let inline withIndexTagInline i (s2aR : Decoder<'s,'a>) : Decoder<'s,'a> =
         fun s ->
             match s2aR s with
-            | JPass a -> JsonResult.pass a
-            | JFail f -> JsonResult.failWithTag (IndexTag i) f
+            | Ok a -> JsonResult.pass a
+            | Error f -> JsonResult.failWithTag (IndexTag i) f
 
     let inline withChoiceTagInline c (s2aR : Decoder<'s,'a>) : Decoder<'s,'a> =
         fun s ->
             match s2aR s with
-            | JPass a -> JsonResult.pass a
-            | JFail f -> JsonResult.failWithTag (ChoiceTag c) f
+            | Ok a -> JsonResult.pass a
+            | Error f -> JsonResult.failWithTag (ChoiceTag c) f
 
     let inline fromThrowingConverterInline (convert: 's -> 'a) : Decoder<'s,'a> =
         fun s ->
@@ -415,15 +413,15 @@ module JsonObject =
         | ReadObject (ps, _) ->
             let rec loop agg lastK lastV ps =
                 match Decoder.withPropertyTag lastK parse lastK with
-                | JPass k ->
+                | Ok k ->
                     match Decoder.withPropertyTag lastK decode lastV with
-                    | JPass v ->
+                    | Ok v ->
                         let nextAgg = (k,v)::agg
                         match ps with
                         | [] -> JsonResult.pass nextAgg
                         | (nextK,nextV)::nextPs -> loop nextAgg nextK nextV nextPs
-                    | JFail errs -> JsonResult.fail errs
-                | JFail errs -> JsonResult.fail errs
+                    | Error errs -> JsonResult.fail errs
+                | Error errs -> JsonResult.fail errs
             match ps with
             | [] -> JsonResult.pass []
             | (initK,initV)::initPs -> loop [] initK initV initPs
@@ -437,24 +435,24 @@ module JsonObject =
                 let kR = Decoder.withPropertyTag lastK parse lastK
                 let vR = Decoder.withPropertyTag lastK decode lastV
                 match kR, vR with
-                | JPass k, JPass v ->
+                | Ok k, Ok v ->
                     let nextAgg = (k,v)::agg
                     match ps with
                     | [] -> JsonResult.pass nextAgg
                     | (nextK,nextV)::nextPs -> goodPath nextAgg nextK nextV nextPs
-                | JFail errs1, JFail errs2 ->
+                | Error errs1, Error errs2 ->
                     badPathTransfer [errs2;errs1] ps
-                | JFail errs, _
-                | _, JFail errs ->
+                | Error errs, _
+                | _, Error errs ->
                     badPathTransfer [errs] ps
             and badPath (aggErrs: JsonFailure list) lastK lastV ps =
                 let kR = Decoder.withPropertyTag lastK parse lastK
                 let vR = Decoder.withPropertyTag lastK decode lastV
                 match kR, vR with
-                | JFail errs1, JFail errs2 ->
+                | Error errs1, Error errs2 ->
                     badPathTransfer (errs2::errs1::aggErrs) ps
-                | JFail errs, _
-                | _, JFail errs ->
+                | Error errs, _
+                | _, Error errs ->
                     badPathTransfer (errs::aggErrs) ps
                 | _ ->
                     badPathTransfer aggErrs ps
@@ -463,7 +461,7 @@ module JsonObject =
                 | [] -> JsonResult.fails aggErrs
                 | (nextK,nextV)::nextPs -> badPath aggErrs nextK nextV nextPs
             match ps with
-            | [] -> JPass []
+            | [] -> Ok []
             | (initK,initV)::initPs -> goodPath [] initK initV initPs
 
     let toPropertyListWithQuick (decode: Decoder<Json,'b>) = function
@@ -471,12 +469,12 @@ module JsonObject =
         | ReadObject (ps, _) ->
             let rec loop agg k lastV ps =
                 match Decoder.withPropertyTag k decode lastV with
-                | JPass v ->
+                | Ok v ->
                     let nextAgg = (k,v)::agg
                     match ps with
                     | [] -> JsonResult.pass nextAgg
                     | (nextK,nextV)::nextPs -> loop nextAgg nextK nextV nextPs
-                | JFail errs -> JsonResult.fail errs
+                | Error errs -> JsonResult.fail errs
             match ps with
             | [] -> JsonResult.pass []
             | (initK,initV)::initPs -> loop [] initK initV initPs
@@ -487,16 +485,16 @@ module JsonObject =
         | ReadObject (ps, _) ->
             let rec goodPath agg k lastV ps =
                 match Decoder.withPropertyTag k decode lastV with
-                | JPass v ->
+                | Ok v ->
                     let nextAgg = (k,v)::agg
                     match ps with
                     | [] -> JsonResult.pass nextAgg
                     | (nextK,nextV)::nextPs -> goodPath nextAgg nextK nextV nextPs
-                | JFail errs ->
+                | Error errs ->
                     badPathTransfer [errs] ps
             and badPath (aggErrs: JsonFailure list) k lastV ps =
                 match Decoder.withPropertyTag k decode lastV with
-                | JFail errs ->
+                | Error errs ->
                     badPathTransfer (errs::aggErrs) ps
                 | _ ->
                     badPathTransfer aggErrs ps
@@ -1101,8 +1099,8 @@ module Serialization =
                     match JsonObject.tryFind k jObj with
                     | Some json ->
                         match Decoder.withPropertyTag k decode json with
-                        | JPass x -> JsonResult.pass (Some x)
-                        | JFail f -> JsonResult.fail f
+                        | Ok x -> JsonResult.pass (Some x)
+                        | Error f -> JsonResult.fail f
                     | None -> JsonResult.pass None
 
             let inline optionalInline (decode: Decoder<Json,'a>) (k: string) : Decoder<JsonObject,'a option> =
@@ -1110,12 +1108,12 @@ module Serialization =
                     match JsonObject.tryFind k jObj with
                     | Some json ->
                         match Decoder.withPropertyTagInline k decode json with
-                        | JPass x -> JsonResult.pass (Some x)
-                        | JFail f -> JsonResult.fail f
+                        | Ok x -> JsonResult.pass (Some x)
+                        | Error f -> JsonResult.fail f
                     | None -> JsonResult.pass None
 
             let withDefault (def: 's) : Decoder<'s option, 's> =
-                fun sO -> JPass (Option.defaultValue def sO)
+                fun sO -> Ok (Option.defaultValue def sO)
 
             let optionalList (decode: Decoder<Json,'a list>) (k: string) : Decoder<JsonObject,'a list> =
                 optional decode k >=> withDefault []
@@ -1146,18 +1144,18 @@ module Serialization =
             let either (decodeA: Decoder<'s,'a>) (decodeB: Decoder<'s,'a>) =
                 fun s ->
                     match Decoder.withChoiceTag 0u decodeA s with
-                    | (JPass _) as goodResult -> goodResult
-                    | JFail errs1 ->
+                    | (Ok _) as goodResult -> goodResult
+                    | Error errs1 ->
                         match Decoder.withChoiceTag 1u decodeB s with
-                        | (JPass _) as goodResult -> goodResult
-                        | JFail errs2 ->
+                        | (Ok _) as goodResult -> goodResult
+                        | Error errs2 ->
                             JsonResult.fail (JsonFailure.mappend errs1 errs2)
 
             let oneOf (decoders: Decoder<'s,'a> list) : Decoder<'s,'a> =
                 let rec failing decode decoders (aggErrs: JsonFailure list) i (s: 's) =
                     match Decoder.withChoiceTag i decode s with
-                    | (JPass _) as goodResult -> goodResult
-                    | JFail errs ->
+                    | (Ok _) as goodResult -> goodResult
+                    | Error errs ->
                         let nextAggErrs = errs::aggErrs
                         match decoders with
                         | [] -> JsonResult.fails nextAggErrs
@@ -1207,12 +1205,12 @@ module Serialization =
                 let singletonArrayλ = (do ()); fun (x: 'a) -> [|x|]
                 let rec goodPath (agg: 'a[]) idx lastX xs =
                     match Decoder.withIndexTag idx decode lastX with
-                    | JPass x ->
+                    | Ok x ->
                         agg.[int idx] <- x
                         match xs with
                         | [] -> JsonResult.pass agg
                         | nextX::nextXs -> goodPath agg (idx + 1u) nextX nextXs
-                    | JFail errs ->
+                    | Error errs ->
                         JsonResult.fail errs
                 list >=> function
                 | [] -> JsonResult.pass [||]
@@ -1224,16 +1222,16 @@ module Serialization =
                 let singletonArrayλ = (do ()); fun (x: 'a) -> [|x|]
                 let rec goodPath (agg: 'a[]) idx lastX xs =
                     match Decoder.withIndexTag idx decode lastX with
-                    | JPass x ->
+                    | Ok x ->
                         agg.[int idx] <- x
                         match xs with
                         | [] -> JsonResult.pass agg
                         | nextX::nextXs -> goodPath agg (idx + 1u) nextX nextXs
-                    | JFail errs ->
+                    | Error errs ->
                         badPathTransfer [errs] idx xs
                 and badPath (aggErrs: JsonFailure list) idx lastX xs =
                     match Decoder.withIndexTag idx decode lastX with
-                    | JFail errs ->
+                    | Error errs ->
                         badPathTransfer (errs::aggErrs) idx xs
                     | _ ->
                         badPathTransfer aggErrs idx xs
@@ -1619,7 +1617,7 @@ module Optics =
         snd l
 
     let compose (l1:Lens<'a,'b>) (l2:Lens<'b,'c>): Lens<'a,'c> =
-        (fun a -> fst l1 a |> JsonResult.bind (fst l2)), (fun c a -> match JsonResult.map (snd l2 c) (fst l1 a) with JPass b -> snd l1 b a; | _ -> a)
+        (fun a -> fst l1 a |> JsonResult.bind (fst l2)), (fun c a -> match JsonResult.map (snd l2 c) (fst l1 a) with Ok b -> snd l1 b a; | _ -> a)
 
     module JsonObject =
         let key_ k =
@@ -1706,23 +1704,23 @@ module JsonTransformer =
         let bind (a2bJ: 'a -> Json<'b>) (aJ: Json<'a>) : Json<'b> =
             fun json ->
                 match aJ json with
-                | JPass a, json' -> a2bJ a json'
-                | JFail e, json' -> JsonResult.fail e, json'
+                | Ok a, json' -> a2bJ a json'
+                | Error e, json' -> JsonResult.fail e, json'
 
         let apply (aJ: Json<'a>) (a2Jb: Json<'a -> 'b>) : Json<'b> =
             fun json ->
                 match a2Jb json with
-                | JPass a2b, json' ->
+                | Ok a2b, json' ->
                     match aJ json' with
-                    | JPass a, json'' -> JsonResult.pass (a2b a), json''
-                    | JFail e, json'' -> JsonResult.fail e, json''
-                | JFail e, json' -> JsonResult.fail e, json'
+                    | Ok a, json'' -> JsonResult.pass (a2b a), json''
+                    | Error e, json'' -> JsonResult.fail e, json''
+                | Error e, json' -> JsonResult.fail e, json'
 
         let map (f: 'a -> 'b) (m: Json<'a>) : Json<'b> =
             fun json ->
                 match m json with
-                | JPass a, json -> JsonResult.pass (f a), json
-                | JFail e, json -> JsonResult.fail e, json
+                | Ok a, json -> JsonResult.pass (f a), json
+                | Error e, json -> JsonResult.fail e, json
 
         let map2 (a2b2c: 'a -> 'b -> 'c) (aJ: Json<'a>) (bJ: Json<'b>) : Json<'c> =
             map a2b2c aJ
@@ -1955,12 +1953,12 @@ module Patterns =
         Optics.get (Optics.Json.Property_ key) json
         |> JsonResult.bind r
         |> function
-            | JPass x -> Some x
+            | Ok x -> Some x
             | _ -> None
 
     let inline (|Property|_|) (key: string) (json: Json): 'a option =
         Optics.get (Optics.Json.Property_ key) json
         |> JsonResult.bind Inference.Json.decode
         |> function
-            | JPass x -> Some x
+            | Ok x -> Some x
             | _ -> None

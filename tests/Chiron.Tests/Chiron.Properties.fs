@@ -15,7 +15,7 @@ module D = Json.Decode
 module DI = Inference.Json.Decode
 
 let doRoundTripTestWith (encode: JsonEncoder<'a>) (decode: Decoder<Json,'a>) (v : 'a) =
-    test <@ v |> encode |> Json.format |> Json.parse |> JsonResult.bind decode = JPass v @>
+    test <@ v |> encode |> Json.format |> Json.parse |> JsonResult.bind decode = Ok v @>
 
 let inline doRoundTripTest (v : 'a) : _ when (^a or Inference.Internal.ChironDefaults) : (static member ToJson: ^a -> Json) and (^a or Inference.Internal.ChironDefaults) : (static member FromJson: ^a -> Decoder<Json,'a>) =
     let (encode : JsonEncoder<'a>),(decode : Decoder<Json,'a>) = Inference.Json.encode, Inference.Json.decode
@@ -87,7 +87,7 @@ let ``UTC DateTime can be round-tripped`` (UtcDateTime v) =
 
 [<Property>]
 let ``Deserialized DateTimes are UTC`` (v : System.DateTime) =
-    test <@ v |> E.dateTime |> Json.format |> Json.parse |> JsonResult.bind D.dateTime |> JsonResult.map (fun (dt : System.DateTime) -> dt.Kind) = JPass System.DateTimeKind.Utc @>
+    test <@ v |> E.dateTime |> Json.format |> Json.parse |> JsonResult.bind D.dateTime |> JsonResult.map (fun (dt : System.DateTime) -> dt.Kind) = Ok System.DateTimeKind.Utc @>
 
 [<Property>]
 let ``DateTimeOffset can be round-tripped`` (v : System.DateTimeOffset) =
@@ -160,10 +160,10 @@ type TestUnion =
 
     static member FromJson (_ : TestUnion) =
         function
-        | Property "CaseWithTwoArgs" (a1, a2) as json -> JPass (CaseWithTwoArgs (a1, a2))
-        | Property "CaseWithThreeArgs" (a1, a2, a3) as json -> JPass (CaseWithThreeArgs (a1, a2, a3))
-        | Property "CaseWithFourArgs" (a1, a2, a3, a4) as json -> JPass (CaseWithFourArgs (a1, a2, a3, a4))
-        | Property "CaseWithFiveArgs" (a1, a2, a3, a4, a5) as json -> JPass (CaseWithFiveArgs (a1, a2, a3, a4, a5))
+        | Property "CaseWithTwoArgs" (a1, a2) as json -> Ok (CaseWithTwoArgs (a1, a2))
+        | Property "CaseWithThreeArgs" (a1, a2, a3) as json -> Ok (CaseWithThreeArgs (a1, a2, a3))
+        | Property "CaseWithFourArgs" (a1, a2, a3, a4) as json -> Ok (CaseWithFourArgs (a1, a2, a3, a4))
+        | Property "CaseWithFiveArgs" (a1, a2, a3, a4, a5) as json -> Ok (CaseWithFiveArgs (a1, a2, a3, a4, a5))
         | _ -> JsonResult.deserializationError (exn "Couldn't find `CaseWithXXXArgs`")
 
 [<Property>]

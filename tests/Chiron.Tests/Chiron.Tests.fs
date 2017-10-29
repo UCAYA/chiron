@@ -58,7 +58,7 @@ module JsonTransformer =
 
     [<Fact>]
     let ``Json.init returns correct values`` () =
-        Json.init 1 t1 =! (JPass 1,  t1)
+        Json.init 1 t1 =! (Ok 1,  t1)
 
     [<Fact>]
     let ``Json.error returns correct values`` () =
@@ -66,25 +66,25 @@ module JsonTransformer =
 
     [<Fact>]
     let ``Json.bind returns correct values`` () =
-        Json.bind (fun x -> Json.init (x * 3)) (Json.init 2) t1 =! (JPass 6, t1)
+        Json.bind (fun x -> Json.init (x * 3)) (Json.init 2) t1 =! (Ok 6, t1)
         Json.bind (fun x -> Json.init (x * 3)) (Json.error (SingleFailure NoInput)) t1 =! ((JsonResult.noInput : JsonResult<int>), t1)
 
     [<Fact>]
     let ``Json.apply returns correct values`` () =
-        Json.apply (Json.init 2) (Json.init (fun x -> x * 3)) t1 =! (JPass 6, t1)
+        Json.apply (Json.init 2) (Json.init (fun x -> x * 3)) t1 =! (Ok 6, t1)
         Json.apply (Json.error (SingleFailure NoInput)) (Json.init (fun x -> x * 3)) t1 =! (JsonResult.noInput, t1)
 
     [<Fact>]
     let ``Json.map returns correct values`` () =
-        Json.map (fun x -> x * 3) (Json.init 2) t1 =! (JPass 6, t1)
+        Json.map (fun x -> x * 3) (Json.init 2) t1 =! (Ok 6, t1)
         Json.map (fun x -> x * 3) (Json.error (SingleFailure NoInput)) t1 =! (JsonResult.noInput, t1)
 
     [<Fact>]
     let ``Json.map2 returns correct values`` () =
-        Json.map2 (*) (Json.init 2) (Json.init 3) t1 =! (JPass 6, t1)
+        Json.map2 (*) (Json.init 2) (Json.init 3) t1 =! (Ok 6, t1)
         Json.map2 (*) (Json.error (SingleFailure NoInput)) (Json.init 3) t1 =! (JsonResult.noInput, t1)
         Json.map2 (*) (Json.init 2) (Json.error (SingleFailure NoInput)) t1 =! (JsonResult.noInput, t1)
-        Json.map2 (*) (Json.error (SingleFailure (PropertyNotFound "s"))) (Json.error (SingleFailure NoInput)) t1 =! (JFail (SingleFailure (PropertyNotFound "s")), t1)
+        Json.map2 (*) (Json.error (SingleFailure (PropertyNotFound "s"))) (Json.error (SingleFailure NoInput)) t1 =! (Error (SingleFailure (PropertyNotFound "s")), t1)
 
 (* Lens
 
@@ -92,18 +92,18 @@ module JsonTransformer =
    data structures. *)
 module Lenses =
     let private id_ =
-        JPass, (fun a _ -> a)
+        Ok, (fun a _ -> a)
 
     let private prism_ =
         Optics.compose (Optics.Json.Property_ "bool") Optics.Json.Bool_
 
     [<Fact>]
     let ``Optics.get returns correct values`` () =
-        Optics.get id_ t1 =! JPass t1
+        Optics.get id_ t1 =! Ok t1
 
     [<Fact>]
     let ``Optics.get with Lens returns correct values`` () =
-        Optics.get prism_ t1 =! JPass true
+        Optics.get prism_ t1 =! Ok true
 
     [<Fact>]
     let ``Optics.set with Lens returns correct values`` () =
@@ -123,11 +123,11 @@ module Lenses =
 module Parsing =
     [<Fact>]
     let ``Json.parse returns correct values`` () =
-        Json.parse "\"hello\"" =! JPass (E.string "hello")
-        Json.parse "\"\"" =! JPass (E.string "")
-        Json.parse "\"\\n\"" =! JPass (E.string "\n")
-        Json.parse "\"\\u005c\"" =! JPass (E.string "\\")
-        Json.parse "\"푟\"" =! JPass (E.string "푟")
+        Json.parse "\"hello\"" =! Ok (E.string "hello")
+        Json.parse "\"\"" =! Ok (E.string "")
+        Json.parse "\"\\n\"" =! Ok (E.string "\n")
+        Json.parse "\"\\u005c\"" =! Ok (E.string "\\")
+        Json.parse "\"푟\"" =! Ok (E.string "푟")
 
         Json.parse null =! JsonResult.noInput
 
@@ -172,94 +172,94 @@ module Formatting =
 module Serialization =
     [<Fact>]
     let ``unit round-trips for example value`` () =
-        D.unit (E.unit ()) =! JPass ()
+        D.unit (E.unit ()) =! Ok ()
 
     [<Fact>]
     let ``true round-trips for example value`` () =
-        D.bool (E.bool true) =! JPass true
+        D.bool (E.bool true) =! Ok true
 
     [<Fact>]
     let ``false round-trips for example value`` () =
-        D.bool (E.bool false) =! JPass false
+        D.bool (E.bool false) =! Ok false
 
     let fortytwo = E.int 42
 
     [<Fact>]
     let ``decimal round-trips for example value`` () =
-        D.decimal (E.decimal 42M) =! JPass 42M
+        D.decimal (E.decimal 42M) =! Ok 42M
 
     [<Fact>]
     let ``float round-trips for example value`` () =
-        D.float (E.float 42.0) =! JPass 42.0
+        D.float (E.float 42.0) =! Ok 42.0
 
     [<Fact>]
     let ``int round-trips for example value`` () =
-        D.int (E.int 42) =! JPass 42
+        D.int (E.int 42) =! Ok 42
 
     [<Fact>]
     let ``int16 round-trips for example value`` () =
-        D.int16 (E.int16 42s) =! JPass 42s
+        D.int16 (E.int16 42s) =! Ok 42s
 
     [<Fact>]
     let ``int64 round-trips for example value`` () =
-        D.int64 (E.int64 42L) =! JPass 42L
+        D.int64 (E.int64 42L) =! Ok 42L
 
     [<Fact>]
     let ``single round-trips for example value`` () =
-        D.single (E.single 42.0f) =! JPass 42.0f
+        D.single (E.single 42.0f) =! Ok 42.0f
 
     [<Fact>]
     let ``uint16 round-trips for example value`` () =
-        D.uint16 (E.uint16 42us) =! JPass 42us
+        D.uint16 (E.uint16 42us) =! Ok 42us
 
     [<Fact>]
     let ``uint32 round-trips for example value`` () =
-        D.uint32 (E.uint32 42u) =! JPass 42u
+        D.uint32 (E.uint32 42u) =! Ok 42u
 
     [<Fact>]
     let ``uint64 round-trips for example value`` () =
-        D.uint64 (E.uint64 42UL) =! JPass 42UL
+        D.uint64 (E.uint64 42UL) =! Ok 42UL
 
     [<Fact>]
     let ``uint64 on bad value returns expected value`` () =
         let result = D.uint64 (E.number "-2")
         match result with
-        | JFail (SingleFailure (DeserializationError (t, err))) when t = typeof<uint64> && err.Message = "Value was either too large or too small for a UInt64." -> ()
-        | JFail f -> failwithf "Did not match expected error: %s" (JsonFailure.summarize f)
+        | Error (SingleFailure (DeserializationError (t, err))) when t = typeof<uint64> && err.Message = "Value was either too large or too small for a UInt64." -> ()
+        | Error f -> failwithf "Did not match expected error: %s" (JsonFailure.summarize f)
         | _ -> failwithf "Unexpectedly succeeded"
 
     [<Fact>]
     let ``string round-trips for example value`` () =
-        D.string (E.string "hello") =! JPass "hello"
+        D.string (E.string "hello") =! Ok "hello"
 
     [<Fact>]
     let ``dateTime round-trips for example value`` () =
         let testValue = DateTime (2015, 2, 20, 14, 36, 21, DateTimeKind.Utc)
-        D.dateTime (E.dateTime testValue) =! JPass testValue
+        D.dateTime (E.dateTime testValue) =! Ok testValue
 
     [<Fact>]
     let ``dateTimeOffset round-trips for example value`` () =
         let testValue = DateTimeOffset (2015, 4, 15, 13, 45, 55, TimeSpan.Zero)
-        D.dateTimeOffset (E.dateTimeOffset testValue) =! JPass testValue
+        D.dateTimeOffset (E.dateTimeOffset testValue) =! Ok testValue
 
     [<Fact>]
     let ``guid round-trips for example value`` () =
         let guid = Guid.NewGuid()
-        D.guid (E.guid guid) =! JPass guid
+        D.guid (E.guid guid) =! Ok guid
 
     [<Fact>]
     let ``bytes round-trips for example value`` () =
         let bytes = "Hello Test!"B
-        D.bytes (E.bytes bytes) =! JPass bytes
+        D.bytes (E.bytes bytes) =! Ok bytes
 
 module Special =
     [<Fact>]
     let ``Parsing reverses order of object elements`` () =
-        test <@ testJson1 |> Json.parse = JPass testJsonObject @>
+        test <@ testJson1 |> Json.parse = Ok testJsonObject @>
 
     [<Fact>]
     let ``Decoding preserves order of object elements`` () =
-        test <@ testJson1 |> Json.parse |> JsonResult.bind (D.jsonObjectWith Testing.decode) = JPass testObject @>
+        test <@ testJson1 |> Json.parse |> JsonResult.bind (D.jsonObjectWith Testing.decode) = Ok testObject @>
 
     [<Fact>]
     let ``Formatting preserves order of object elements`` () =
@@ -271,11 +271,11 @@ module Special =
 
     [<Fact>]
     let ``Parsing preserves order of array elements`` () =
-        test <@ """["1","2","3"]""" |> Json.parse = JPass (E.list [ E.string "1"; E.string "2"; E.string "3" ]) @>
+        test <@ """["1","2","3"]""" |> Json.parse = Ok (E.list [ E.string "1"; E.string "2"; E.string "3" ]) @>
 
     [<Fact>]
     let ``Decoding preserves order of array elements`` () =
-        test <@ """["1","2","3"]""" |> Json.parse |> JsonResult.bind (D.listWith D.string) = JPass ["1"; "2"; "3"] @>
+        test <@ """["1","2","3"]""" |> Json.parse |> JsonResult.bind (D.listWith D.string) = Ok ["1"; "2"; "3"] @>
 
     [<Fact>]
     let ``Formatting preserves order of array elements`` () =
@@ -290,134 +290,134 @@ module Inference =
 
     [<Fact>]
     let ``Inferred round-trip on true returns expected value`` () =
-        Json.decode (Json.encode true) =! JPass true
+        Json.decode (Json.encode true) =! Ok true
 
     [<Fact>]
     let ``Inferred round-trip on false returns expected value`` () =
-        Json.decode (Json.encode false) =! JPass false
+        Json.decode (Json.encode false) =! Ok false
 
     let fortytwo = Json.encode 42
 
     [<Fact>]
     let ``Inferred round-trip to decimal returns expected value`` () =
-        Json.decode fortytwo =! JPass 42M
+        Json.decode fortytwo =! Ok 42M
 
     [<Fact>]
     let ``Inferred round-trip to float returns expected value`` () =
-        Json.decode fortytwo =! JPass 42.0
+        Json.decode fortytwo =! Ok 42.0
 
     [<Fact>]
     let ``Inferred round-trip to int returns expected value`` () =
-        Json.decode fortytwo =! JPass 42
+        Json.decode fortytwo =! Ok 42
 
     [<Fact>]
     let ``Inferred round-trip to int16 returns expected value`` () =
-        Json.decode fortytwo =! JPass 42s
+        Json.decode fortytwo =! Ok 42s
 
     [<Fact>]
     let ``Inferred round-trip to int64 returns expected value`` () =
-        Json.decode fortytwo =! JPass 42L
+        Json.decode fortytwo =! Ok 42L
 
     [<Fact>]
     let ``Inferred round-trip to single returns expected value`` () =
-        Json.decode fortytwo =! JPass 42.0f
+        Json.decode fortytwo =! Ok 42.0f
 
     [<Fact>]
     let ``Inferred round-trip to uint16 returns expected value`` () =
-        Json.decode fortytwo =! JPass 42us
+        Json.decode fortytwo =! Ok 42us
 
     [<Fact>]
     let ``Inferred round-trip to uint32 returns expected value`` () =
-        Json.decode fortytwo =! JPass 42u
+        Json.decode fortytwo =! Ok 42u
 
     [<Fact>]
     let ``Inferred round-trip to uint64 returns expected value`` () =
-        Json.decode fortytwo =! JPass 42UL
+        Json.decode fortytwo =! Ok 42UL
 
     [<Fact>]
     let ``Inferred round-trip to uint64 on bad value returns expected value`` () =
         let result : JsonResult<uint64> = Json.decode (E.number "-2")
         match result with
-        | JFail (SingleFailure (DeserializationError (t, err))) when t = typeof<uint64> && err.Message = "Value was either too large or too small for a UInt64." -> ()
-        | JFail f -> failwithf "Did not match expected error: %s" (JsonFailure.summarize f)
+        | Error (SingleFailure (DeserializationError (t, err))) when t = typeof<uint64> && err.Message = "Value was either too large or too small for a UInt64." -> ()
+        | Error f -> failwithf "Did not match expected error: %s" (JsonFailure.summarize f)
         | _ -> failwithf "Unexpectedly succeeded"
 
     [<Fact>]
     let ``Inferred round-trip to string returns expected value`` () =
-        Json.decode (Json.encode "hello") =! JPass "hello"
+        Json.decode (Json.encode "hello") =! Ok "hello"
 
     [<Fact>]
     let ``Inferred round-trip to datetime returns expected value`` () =
-        Json.decode (Json.encode "Fri, 20 Feb 2015 14:36:21 GMT") =! JPass (DateTime (2015, 2, 20, 14, 36, 21, DateTimeKind.Utc))
+        Json.decode (Json.encode "Fri, 20 Feb 2015 14:36:21 GMT") =! Ok (DateTime (2015, 2, 20, 14, 36, 21, DateTimeKind.Utc))
 
     [<Fact>]
     let ``Inferred round-trip to datetimeoffset returns expected value`` () =
-        Json.decode (Json.encode "2015-04-15T13:45:55Z") =! JPass (DateTimeOffset (2015, 4, 15, 13, 45, 55, TimeSpan.Zero))
+        Json.decode (Json.encode "2015-04-15T13:45:55Z") =! Ok (DateTimeOffset (2015, 4, 15, 13, 45, 55, TimeSpan.Zero))
 
     [<Fact>]
     let ``Inferred round-trip to guid returns expected value`` () =
-        Json.decode (Json.encode "0123456789ABCDEFFEDCBA9876543210") =! JPass (Guid "0123456789ABCDEFFEDCBA9876543210")
+        Json.decode (Json.encode "0123456789ABCDEFFEDCBA9876543210") =! Ok (Guid "0123456789ABCDEFFEDCBA9876543210")
 
     [<Fact>]
     let ``Inferred round-trip on array returns correct values`` () =
-        Json.decode (Json.encode [ "hello"; "world" ]) =! JPass [| "hello"; "world" |]
+        Json.decode (Json.encode [ "hello"; "world" ]) =! Ok [| "hello"; "world" |]
 
     [<Fact>]
     let ``Inferred round-trip on list returns correct values`` () =
-        Json.decode (Json.encode [ "hello"; "world" ]) =! JPass [ "hello"; "world" ]
+        Json.decode (Json.encode [ "hello"; "world" ]) =! Ok [ "hello"; "world" ]
 
     [<Fact>]
     let ``Inferred round-trip on None returns correct values`` () =
         let none : string option = None
-        Json.decode (Json.encode none) =! JPass none
+        Json.decode (Json.encode none) =! Ok none
 
     [<Fact>]
     let ``Inferred round-trip on None with different types returns correct values`` () =
-        Json.decode (Json.encode (None: int option)) =! JPass (None: string option)
+        Json.decode (Json.encode (None: int option)) =! Ok (None: string option)
 
     [<Fact>]
     let ``Inferred round-trip on map returns correct values`` () =
-        Json.decode (E.propertyList [ "one", E.decimal 1M; "two", E.decimal 2M ]) =! JPass (Map.ofList [ "one", 1; "two", 2 ])
+        Json.decode (E.propertyList [ "one", E.decimal 1M; "two", E.decimal 2M ]) =! Ok (Map.ofList [ "one", 1; "two", 2 ])
 
     [<Fact>]
     let ``Inferred round-trip on set returns correct values`` () =
-        Json.decode (Json.encode [ "one"; "two" ]) =! JPass (set [ "one"; "two" ])
+        Json.decode (Json.encode [ "one"; "two" ]) =! Ok (set [ "one"; "two" ])
 
     [<Fact>]
     let ``Inferred round-trip on Some returns correct values`` () =
-        Json.decode (Json.encode (Some "hello")) =! JPass (Some "hello")
+        Json.decode (Json.encode (Some "hello")) =! Ok (Some "hello")
 
     [<Fact>]
     let ``Inferred round-trip on Some returns correct values (no wrapper)`` () =
-        Json.decode (Json.encode "hello") =! JPass (Some "hello")
+        Json.decode (Json.encode "hello") =! Ok (Some "hello")
 
     [<Fact>]
     let ``Inferred round-trip on 2-Tuple returns correct values`` () =
-        Json.decode (Json.encode [ Json.encode "hello"; Json.encode 42M ]) =! JPass ("hello", 42)
+        Json.decode (Json.encode [ Json.encode "hello"; Json.encode 42M ]) =! Ok ("hello", 42)
 
     [<Fact>]
     let ``Inferred round-trip on 3-Tuple returns correct values`` () =
-        Json.decode (Json.encode [ Json.encode "hello"; Json.encode 42M; Json.encode true ]) =! JPass ("hello", 42, true)
+        Json.decode (Json.encode [ Json.encode "hello"; Json.encode 42M; Json.encode true ]) =! Ok ("hello", 42, true)
 
     [<Fact>]
     let ``Inferred round-trip on 4-Tuple returns correct values`` () =
         Json.decode (Json.encode [ Json.encode "hello"; Json.encode 42M; Json.encode true; Json.encode (None: uint16 option) ])
-            =! JPass ("hello", 42, true, (None: string option))
+            =! Ok ("hello", 42, true, (None: string option))
 
     [<Fact>]
     let ``Inferred round-trip on 5-Tuple returns correct values`` () =
         Json.decode (Json.encode [ Json.encode "hello"; Json.encode 42M; Json.encode true; Json.encode (None: uint16 option); Json.encode -4 ])
-            =! JPass ("hello", 42, true, (None: string option), -4L)
+            =! Ok ("hello", 42, true, (None: string option), -4L)
 
     [<Fact>]
     let ``Inferred round-trip on 6-Tuple returns correct values`` () =
         Json.decode (Json.encode [ Json.encode "hello"; Json.encode 42M; Json.encode true; Json.encode (None: uint16 option); Json.encode -4; Json.encode "Test" ])
-            =! JPass ("hello", 42, true, (None: string option), -4L, "Test")
+            =! Ok ("hello", 42, true, (None: string option), -4L, "Test")
 
     [<Fact>]
     let ``Inferred round-trip on 7-Tuple returns correct values`` () =
         Json.decode (Json.encode [ Json.encode "hello"; Json.encode 42M; Json.encode true; Json.encode (None: uint16 option); Json.encode -4; Json.encode "Test"; Json.encode -0.0 ])
-            =! JPass ("hello", 42, true, (None: string option), -4L, "Test", 0M)
+            =! Ok ("hello", 42, true, (None: string option), -4L, "Test", 0M)
 
 module WithTestRecord =
     open Inference
@@ -475,7 +475,7 @@ module WithTestRecord =
 
     [<Fact>]
     let ``Json.decode with custom typed returns correct values`` () =
-        Json.decode testJson =! JPass testInstance
+        Json.decode testJson =! Ok testInstance
 
     let testJsonWithNullOption =
         E.propertyList
@@ -492,7 +492,7 @@ module WithTestRecord =
 
     [<Fact(Skip="To be considered")>]
     let ``Json.decode with null option value`` () =
-        Json.decode testJsonWithNullOption =! JPass testInstanceWithNoneOption
+        Json.decode testJsonWithNullOption =! Ok testInstanceWithNoneOption
 
     let testJsonWithMissingOption =
         E.propertyList
@@ -502,7 +502,7 @@ module WithTestRecord =
 
     [<Fact>]
     let ``Json.decode with missing value`` () =
-        Json.decode testJsonWithMissingOption =! JPass testInstanceWithNoneOption
+        Json.decode testJsonWithMissingOption =! Ok testInstanceWithNoneOption
 
     [<Fact>]
     let ``Json.encode with default value`` () =
@@ -517,7 +517,7 @@ module WithTestRecord =
     [<Fact>]
     let ``Json.decode with invalid value includes missing member name`` () =
         let x : JsonResult<Test> = Json.decode testJsonWithNoValues
-        x =! JFail (SingleFailure (PropertyNotFound "values"))
+        x =! Error (SingleFailure (PropertyNotFound "values"))
 
     [<Fact>]
     let ``Json.encode with custom types returns correct values`` () =
@@ -573,7 +573,7 @@ module WithTestUnion =
 
 // [<Fact>]
 // let ``Json.decode with union types remains tractable`` () =
-//     Json.decode testUnionJson =! JPass testUnion
+//     Json.decode testUnionJson =! Ok testUnion
 
 // [<Fact>]
 // let ``Json.format escapes object keys correctly`` () =
@@ -610,7 +610,7 @@ module WithTestUnion =
 
 // [<Fact>]
 // let ``Json.readWith allows using a custom deserialization function`` () =
-//     Json.decode serializedMonday =! JPass deserializedMonday
+//     Json.decode serializedMonday =! Ok deserializedMonday
 
 // [<Fact>]
 // let ``Json.writeWith allows using a custom serialization function`` () =
@@ -698,7 +698,7 @@ module WithComplexType =
 
     // [<Fact>]
     // let ``complexx`` () =
-    //     test <@ JPass expected = (Json.parseOrThrow thing |> Optic.get Json.Optics.Object_ |> Result.bind Encoders.ComplexType.decode) @>
+    //     test <@ Ok expected = (Json.parseOrThrow thing |> Optic.get Json.Optics.Object_ |> Result.bind Encoders.ComplexType.decode) @>
     // [<Fact>]
     // let ``complexy`` () =
     //     test <@ thing2 = (JsonObject.build Encoders.ComplexType.encode expected |> Json.format) @>
