@@ -143,10 +143,6 @@ module JsonResult =
         | Ok x -> x
         | Error f -> failwith (JsonFailure.toStrings f |> String.concat "\n")
 
-    let toResult : JsonResult<'a> -> Result<'a, JsonFailure> = function
-        | JPass x -> Ok x
-        | JFail f -> Error f
-
     let raise e = fail (SingleFailure (OtherError e))
     let typeMismatch expected json = fail (SingleFailure (TypeMismatch (expected, JsonMemberType.ofJson json)))
     let deserializationError<'a> exn : JsonResult<'a> = fail (SingleFailure (DeserializationError (typeof<'a>, exn)))
@@ -930,17 +926,6 @@ module Serialization =
                 Option.map encode aO
                 |> option
 
-            let result (jR : Result<Json, Json>) : Json =
-                match jR with
-                | Ok(a) -> a
-                | Error(b) -> b
-
-            let resultWith (encodeA: JsonEncoder<'a>) (encodeB: JsonEncoder<'b>) (abR: Result<'a, 'b>): Json =
-                abR
-                |> Result.map encodeA
-                |> Result.mapError encodeB
-                |> result
-
             // let set (els: Set<Json>): Json =
             //     Set.toList els
             //     |> list
@@ -1294,16 +1279,6 @@ module Serialization =
             let setWith (decode: Decoder<Json,'a>) : Decoder<Json,Set<'a>> =
                 Set.ofArray <!> arrayWith decode
 
-            let resultWith (decodeA: Decoder<Json, 'a>) (decodeB : Decoder<Json, 'b>) : Decoder<Json, Result<'a, 'b>> =
-                fun s ->
-                    match Decoder.withChoiceTag 0u decodeA s with
-                    | (JPass _) as goodResult -> JsonResult.map Ok goodResult
-                    | JFail errs1 ->
-                        match Decoder.withChoiceTag 1u decodeB s with
-                        | (JPass _) as goodResult -> JsonResult.map Error goodResult
-                        | JFail errs2 ->
-                            JsonResult.fail (JsonFailure.mappend errs1 errs2)
-
             let map : Decoder<Json,Map<string,Json>> =
                 JsonObject.toMap <!> jsonObject
 
@@ -1593,11 +1568,11 @@ module Serialization =
                 | Json.String s -> JsonResult.pass s
                 | json -> JsonResult.typeMismatch JsonMemberType.String json
 
-            let dateTimeParser s = System.DateTime.ParseExact (s, [| "s"; "r"; "o" |], CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal)
+            let dateTimeParser (s:string) = System.DateTime.ParseExact (s, [| "s"; "r"; "o" |], CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal)
             let dateTime =
                 string >=> Decoder.fromThrowingConverter dateTimeParser
 
-            let dateTimeOffsetParser s = System.DateTimeOffset.ParseExact (s, [| "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'"; "o"; "r" |], CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal)
+            let dateTimeOffsetParser (s:string) = System.DateTimeOffset.ParseExact (s, [| "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'"; "o"; "r" |], CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal)
             let dateTimeOffset =
                 string >=> Decoder.fromThrowingConverter dateTimeOffsetParser
 
@@ -1866,7 +1841,6 @@ module Inference =
             static member inline ToJson (xO: 'a option): Json = E.optionWith encode xO
             static member inline ToJson (xs: Set<'a>): Json = E.setWith encode xs
             static member inline ToJson (m: Map<string, 'a>): Json = E.mapWith encode m
-            static member inline ToJson (r: Result<'a, 'b>): Json = E.resultWith encode encode r
             static member inline ToJson (t): Json = E.tuple2 encode encode t
             static member inline ToJson (t): Json = E.tuple3 encode encode encode t
             static member inline ToJson (t): Json = E.tuple4 encode encode encode encode t
@@ -1879,7 +1853,6 @@ module Inference =
             static member inline FromJson (_: 'a option) = D.optionWith decode
             static member inline FromJson (_: Set<'a>) = D.setWith decode
             static member inline FromJson (_: Map<string, 'a>) = D.mapWith decode
-            static member inline FromJson (_: Result<'a, 'b>) = D.resultWith decode decode
             static member inline FromJson (_: 'a * 'b) = D.tuple2With decode decode
             static member inline FromJson (_: 'a * 'b * 'c) = D.tuple3With decode decode decode
             static member inline FromJson (_: 'a * 'b * 'c * 'd) = D.tuple4With decode decode decode decode
