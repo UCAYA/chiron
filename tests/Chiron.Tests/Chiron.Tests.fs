@@ -121,6 +121,9 @@ module Lenses =
 (* Parsing *)
 
 module Parsing =
+    open System.Threading
+    open System.Globalization
+
     [<Fact>]
     let ``Json.parse returns correct values`` () =
         Json.parse "\"hello\"" =! Ok (E.string "hello")
@@ -131,7 +134,18 @@ module Parsing =
 
         Json.parse null =! JsonResult.noInput
 
+
+    [<Fact>]
+    let ``Json.format returns correct values under other cultures`` () =
+        let culture = Thread.CurrentThread.CurrentCulture
+        Thread.CurrentThread.CurrentCulture <- CultureInfo("fi-FI")
+        Json.parse "3.5" =! JPass (E.float 3.5)
+        Thread.CurrentThread.CurrentCulture <- culture
+
 module Formatting =
+    open System.Threading
+    open System.Globalization
+
     [<Fact>]
     let ``Json.format returns correct values`` () =
         Json.format t1 =! """{"bool":true,"number":2}"""
@@ -141,6 +155,14 @@ module Formatting =
         Json.format (E.string "") =! "\"\""
         Json.format (E.string "푟") =! "\"푟\""
         Json.format (E.string "\t") =! "\"\\t\""
+        Json.format (E.float 3.5) =! "3.5"
+
+    [<Fact>]
+    let ``Json.format returns correct values under other cultures`` () =
+        let culture = Thread.CurrentThread.CurrentCulture
+        Thread.CurrentThread.CurrentCulture <- CultureInfo("fi-FI")
+        Json.format (E.float 3.5) =! "3.5"
+        Thread.CurrentThread.CurrentCulture <- culture
 
     // [<Fact>]
     // let ``escape is not pathological for cases with escapes`` () =
@@ -384,6 +406,30 @@ module Inference =
         Json.decode (Json.encode [ "one"; "two" ]) =! Ok (set [ "one"; "two" ])
 
     [<Fact>]
+    let ``Inferred round-trip on Ok result returns correct value`` () =
+        Json.decode (Json.encode (Ok "Test" : Result<string, int>)) =! JPass (Ok "Test" : Result<string, int>)
+
+    [<Fact>]
+    let ``Inferred round-trip on Ok result returns correct value (no wrapper)`` () =
+        Json.decode (Json.encode ("Test")) =! JPass (Ok "Test" : Result<string, int>)
+
+    [<Fact>]
+    let ``Inferred round-trip on Ok result favors Ok over Error (no wrapper)`` () =
+        Json.decode (Json.encode ("Test")) =! JPass (Ok "Test" : Result<string, string>)
+
+    [<Fact>]
+    let ``Inferred round-trip on Error result returns correct value`` () =
+        Json.decode (Json.encode (Error 123 : Result<string, int>)) =! JPass (Error 123 : Result<string, int>)
+
+    [<Fact>]
+    let ``Inferred round-trip on Error result returns correct value (no wrapper)`` () =
+        Json.decode (Json.encode (123)) =! JPass (Error 123 : Result<string, int>)
+
+    [<Fact>]
+    let ``Inferred round-trip on Ok result with different Error type returns correct value`` () =
+        Json.decode (Json.encode (Ok "Test" : Result<string, int>)) =! JPass (Ok "Test" : Result<string, bool>)
+
+    [<Fact>]
     let ``Inferred round-trip on Some returns correct values`` () =
         Json.decode (Json.encode (Some "hello")) =! Ok (Some "hello")
 
@@ -445,9 +491,9 @@ module WithTestRecord =
         module Decode =
             let test =
                 let inner =
-                    (fun s n v j -> { String = s; Number = n; Values = v; Json = j })
+                    (fun s n v j -> { String = s; Number = Option.bind id n; Values = v; Json = j })
                     <!> DI.required "string"
-                    <*> D.optional D.int "number"
+                    <*> D.optional (D.optionWith D.int) "number"
                     <*> D.required (D.listWith D.bool) "values"
                     <*> D.required D.json "json"
                 D.jsonObject >=> inner
@@ -490,7 +536,7 @@ module WithTestRecord =
           Values = [ ]
           Json = E.propertyList [ "hello", E.string "world" ] }
 
-    [<Fact(Skip="To be considered")>]
+    [<Fact>]
     let ``Json.decode with null option value`` () =
         Json.decode testJsonWithNullOption =! Ok testInstanceWithNoneOption
 
@@ -522,6 +568,96 @@ module WithTestRecord =
     [<Fact>]
     let ``Json.encode with custom types returns correct values`` () =
         Json.encode testInstance =! testJson
+
+module WithRecursion =
+    open Operators
+
+    type Node =
+        | Data of IntTree * IntTree
+
+    and IntTree =
+        | Node of Node
+        | Leaf of int
+
+    module Encode =
+        let treeRef, tree = E.ref<IntTree> ()
+
+        let leafMixin i jObj =
+            E.required E.int "value" i jObj
+
+        let nodeMixin (Data (l,r)) jObj =
+            E.required tree "left" l jObj
+            |> E.required tree "right" r
+
+        let node n =
+            E.buildWith nodeMixin n
+
+        do
+            treeRef := function
+                | Node n -> node n
+                | Leaf i -> E.buildWith leafMixin i
+
+    module Decode =
+        let treeRef, tree = D.ref<Json,IntTree>()
+
+        let decodeLeaf =
+            Leaf
+            <!> D.required D.int "value"
+
+        let decodeNode =
+            (fun l r -> Data (l,r))
+            <!> D.required tree "left"
+            <*> D.required tree "right"
+
+        let decodeTreeNode =
+            Node
+            <!> D.jsonObjectWith decodeNode
+
+        do
+            treeRef :=
+                D.oneOf
+                    [ D.jsonObjectWith decodeLeaf
+                      decodeTreeNode ]
+
+    module Tests =
+        let trivialAsJson =
+            E.propertyList
+                [ "value", E.int 1 ]
+
+        let trivial = Leaf 1
+
+        [<Fact>]
+        let ``encode with trivial value`` () =
+
+            Encode.tree trivial =! trivialAsJson
+
+        [<Fact>]
+        let ``decode to trivial value`` () =
+
+            Decode.tree trivialAsJson =! JPass trivial
+
+        let recursiveAsJson =
+            E.propertyList
+                [ "left",
+                    E.propertyList
+                        [ "left", E.propertyList ["value", E.int 1]
+                          "right", E.propertyList ["value", E.int 2]]
+                  "right",
+                    E.propertyList
+                        [ "left", E.propertyList ["value", E.int 3]
+                          "right", E.propertyList ["value", E.int 4]]]
+
+        let recursive =
+            Node (Data (Node (Data (Leaf 1, Leaf 2)), Node (Data (Leaf 3, Leaf 4))))
+
+        [<Fact>]
+        let ``encode with recursion`` () =
+            Encode.tree recursive =! recursiveAsJson
+
+        [<Fact>]
+        let ``decode with recursion`` () =
+
+            Decode.tree recursiveAsJson =! JPass recursive
 
 module WithTestUnion =
     open Operators

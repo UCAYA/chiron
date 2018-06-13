@@ -143,6 +143,10 @@ module JsonResult =
         | Ok x -> x
         | Error f -> failwith (JsonFailure.toStrings f |> String.concat "\n")
 
+    let toResult : JsonResult<'a> -> Result<'a, JsonFailure> = function
+        | JPass x -> Ok x
+        | JFail f -> Error f
+
     let raise e = fail (SingleFailure (OtherError e))
     let typeMismatch expected json = fail (SingleFailure (TypeMismatch (expected, JsonMemberType.ofJson json)))
     let deserializationError<'a> exn : JsonResult<'a> = fail (SingleFailure (DeserializationError (typeof<'a>, exn)))
@@ -296,7 +300,7 @@ module Decoder =
             | Ok a -> JsonResult.pass a
             | Error f -> JsonResult.failWithTag (ChoiceTag c) f
 
-    let fromThrowingConverter (convert: 's -> 'a) : Decoder<'s,'a> =
+    let inline fromThrowingConverter (convert: 's -> 'a) : Decoder<'s,'a> =
         fun s ->
             try
                 JsonResult.pass (convert s)
@@ -645,6 +649,7 @@ module Parsing =
 
 [<AutoOpen>]
 module Formatting =
+    open System.Globalization
     let escapeChars =
         [| '"'; '\\'; '\n'; '\r'; '\t'; '\b'; '\f'
            '\u0000'; '\u0001'; '\u0002'; '\u0003'
@@ -697,7 +702,7 @@ module Formatting =
         | '\u001D' -> @"\u001D"
         | '\u001E' -> @"\u001E"
         | '\u001F' -> @"\u001F"
-        | c -> @"\u" + (int c).ToString("X4")
+        | c -> @"\u" + (int c).ToString("X4", CultureInfo.InvariantCulture)
 
     type PropertyNameSpacing =
         | NoSpaceBetweenNameAndValue
@@ -837,6 +842,7 @@ module Formatting =
 
 [<AutoOpen>]
 module Serialization =
+    open System.Globalization
     module Json =
         module Encode =
             let buildWith (builder: ObjectBuilder<'a>) (a: 'a): Json =
@@ -870,6 +876,10 @@ module Serialization =
                 match aO with
                 | Some a -> buildWith a jObj
                 | None -> jObj
+
+            let ref (): JsonEncoder<'a> ref * JsonEncoder<'a> =
+                let innerRef = ref (Unchecked.defaultof<JsonEncoder<'a>>)
+                innerRef, (fun a -> (!innerRef) a)
 
             let lazily (lazyEncode: Lazy<JsonEncoder<'a>>): JsonEncoder<'a> =
                 fun a -> lazyEncode.Force() a
@@ -919,6 +929,17 @@ module Serialization =
             let optionWith (encode: JsonEncoder<'a>) (aO: 'a option): Json =
                 Option.map encode aO
                 |> option
+
+            let result (jR : Result<Json, Json>) : Json =
+                match jR with
+                | Ok(a) -> a
+                | Error(b) -> b
+
+            let resultWith (encodeA: JsonEncoder<'a>) (encodeB: JsonEncoder<'b>) (abR: Result<'a, 'b>): Json =
+                abR
+                |> Result.map encodeA
+                |> Result.mapError encodeB
+                |> result
 
             // let set (els: Set<Json>): Json =
             //     Set.toList els
@@ -992,51 +1013,51 @@ module Serialization =
                 Json.Number n
 
             let int16 (n: int16): Json =
-                n.ToString()
+                n.ToString(CultureInfo.InvariantCulture)
                 |> number
 
             let int (n: int): Json =
-                n.ToString()
+                n.ToString(CultureInfo.InvariantCulture)
                 |> number
 
             let int64 (n: int64): Json =
-                n.ToString()
+                n.ToString(CultureInfo.InvariantCulture)
                 |> number
 
             let uint16 (n: uint16): Json =
-                n.ToString()
+                n.ToString(CultureInfo.InvariantCulture)
                 |> number
 
             let uint32 (n: uint32): Json =
-                n.ToString()
+                n.ToString(CultureInfo.InvariantCulture)
                 |> number
 
             let uint64 (n: uint64): Json =
-                n.ToString()
+                n.ToString(CultureInfo.InvariantCulture)
                 |> number
 
             let single (n: single): Json =
-                n.ToString("R")
+                n.ToString("R", CultureInfo.InvariantCulture)
                 |> number
 
             let float (n: float): Json =
-                n.ToString("G17")
+                n.ToString("G17", CultureInfo.InvariantCulture)
                 |> number
 
             let decimal (n: decimal): Json =
-                n.ToString()
+                n.ToString(CultureInfo.InvariantCulture)
                 |> number
 
             let bigint (n: bigint): Json =
-                n.ToString("R")
+                n.ToString("R", CultureInfo.InvariantCulture)
                 |> number
 
             let dateTime (dt: System.DateTime): Json =
-                dt.ToUniversalTime().ToString("o")
+                dt.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture)
                 |> string
 
             let dateTimeOffset (dt: System.DateTimeOffset): Json =
-                dt.ToString("o")
+                dt.ToString("o", CultureInfo.InvariantCulture)
                 |> string
 
             let guid (g: System.Guid): Json =
@@ -1128,6 +1149,10 @@ module Serialization =
                 fun jObj ->
                     Encode.jsonObject jObj
                     |> decode
+
+            let ref (): Decoder<'s,'a> ref * Decoder<'s,'a> =
+                let innerRef = ref (Unchecked.defaultof<Decoder<'s,'a>>)
+                innerRef, (fun s -> (!innerRef) s)
 
             let lazily (lazyDecode: Lazy<Decoder<'s,'a>>): Decoder<'s,'a> =
                 fun s ->
@@ -1268,6 +1293,16 @@ module Serialization =
 
             let setWith (decode: Decoder<Json,'a>) : Decoder<Json,Set<'a>> =
                 Set.ofArray <!> arrayWith decode
+
+            let resultWith (decodeA: Decoder<Json, 'a>) (decodeB : Decoder<Json, 'b>) : Decoder<Json, Result<'a, 'b>> =
+                fun s ->
+                    match Decoder.withChoiceTag 0u decodeA s with
+                    | (JPass _) as goodResult -> JsonResult.map Ok goodResult
+                    | JFail errs1 ->
+                        match Decoder.withChoiceTag 1u decodeB s with
+                        | (JPass _) as goodResult -> JsonResult.map Error goodResult
+                        | JFail errs2 ->
+                            JsonResult.fail (JsonFailure.mappend errs1 errs2)
 
             let map : Decoder<Json,Map<string,Json>> =
                 JsonObject.toMap <!> jsonObject
@@ -1523,34 +1558,34 @@ module Serialization =
                 | json -> JsonResult.typeMismatch JsonMemberType.Number json
 
             let int16 =
-                number >=> Decoder.fromThrowingConverter System.Int16.Parse
+                number >=> Decoder.fromThrowingConverter (fun s -> System.Int16.Parse(s, CultureInfo.InvariantCulture))
 
             let int =
-                number >=> Decoder.fromThrowingConverter System.Int32.Parse
+                number >=> Decoder.fromThrowingConverter (fun s -> System.Int32.Parse(s, CultureInfo.InvariantCulture))
 
             let int64 =
-                number >=> Decoder.fromThrowingConverter System.Int64.Parse
+                number >=> Decoder.fromThrowingConverter (fun s -> System.Int64.Parse(s, CultureInfo.InvariantCulture))
 
             let uint16 =
-                number >=> Decoder.fromThrowingConverter System.UInt16.Parse
+                number >=> Decoder.fromThrowingConverter (fun s -> System.UInt16.Parse(s, CultureInfo.InvariantCulture))
 
             let uint32 =
-                number >=> Decoder.fromThrowingConverter System.UInt32.Parse
+                number >=> Decoder.fromThrowingConverter (fun s -> System.UInt32.Parse(s, CultureInfo.InvariantCulture))
 
             let uint64 =
-                number >=> Decoder.fromThrowingConverter System.UInt64.Parse
+                number >=> Decoder.fromThrowingConverter (fun s -> System.UInt64.Parse(s, CultureInfo.InvariantCulture))
 
             let single =
-                number >=> Decoder.fromThrowingConverter System.Single.Parse
+                number >=> Decoder.fromThrowingConverter (fun s -> System.Single.Parse(s, CultureInfo.InvariantCulture))
 
             let float =
-                number >=> Decoder.fromThrowingConverter System.Double.Parse
+                number >=> Decoder.fromThrowingConverter (fun s -> System.Double.Parse(s, CultureInfo.InvariantCulture))
 
             let decimal =
-                number >=> Decoder.fromThrowingConverter System.Decimal.Parse
+                number >=> Decoder.fromThrowingConverter (fun s -> System.Decimal.Parse(s, CultureInfo.InvariantCulture))
 
             let bigint =
-                number >=> Decoder.fromThrowingConverter System.Numerics.BigInteger.Parse
+                number >=> Decoder.fromThrowingConverter (fun s -> System.Numerics.BigInteger.Parse(s, CultureInfo.InvariantCulture))
 
             let string =
                 do ()
@@ -1558,11 +1593,11 @@ module Serialization =
                 | Json.String s -> JsonResult.pass s
                 | json -> JsonResult.typeMismatch JsonMemberType.String json
 
-            let dateTimeParser s = System.DateTime.ParseExact (s, [| "s"; "r"; "o" |], null, System.Globalization.DateTimeStyles.AdjustToUniversal)
+            let dateTimeParser s = System.DateTime.ParseExact (s, [| "s"; "r"; "o" |], CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal)
             let dateTime =
                 string >=> Decoder.fromThrowingConverter dateTimeParser
 
-            let dateTimeOffsetParser s = System.DateTimeOffset.ParseExact (s, [| "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'"; "o"; "r" |], null, System.Globalization.DateTimeStyles.AssumeUniversal)
+            let dateTimeOffsetParser s = System.DateTimeOffset.ParseExact (s, [| "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'"; "o"; "r" |], CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal)
             let dateTimeOffset =
                 string >=> Decoder.fromThrowingConverter dateTimeOffsetParser
 
@@ -1831,6 +1866,7 @@ module Inference =
             static member inline ToJson (xO: 'a option): Json = E.optionWith encode xO
             static member inline ToJson (xs: Set<'a>): Json = E.setWith encode xs
             static member inline ToJson (m: Map<string, 'a>): Json = E.mapWith encode m
+            static member inline ToJson (r: Result<'a, 'b>): Json = E.resultWith encode encode r
             static member inline ToJson (t): Json = E.tuple2 encode encode t
             static member inline ToJson (t): Json = E.tuple3 encode encode encode t
             static member inline ToJson (t): Json = E.tuple4 encode encode encode encode t
@@ -1843,6 +1879,7 @@ module Inference =
             static member inline FromJson (_: 'a option) = D.optionWith decode
             static member inline FromJson (_: Set<'a>) = D.setWith decode
             static member inline FromJson (_: Map<string, 'a>) = D.mapWith decode
+            static member inline FromJson (_: Result<'a, 'b>) = D.resultWith decode decode
             static member inline FromJson (_: 'a * 'b) = D.tuple2With decode decode
             static member inline FromJson (_: 'a * 'b * 'c) = D.tuple3With decode decode decode
             static member inline FromJson (_: 'a * 'b * 'c * 'd) = D.tuple4With decode decode decode decode
