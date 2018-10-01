@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <VersionPrefix>7.0.0</VersionPrefix>
+    <Authors>Andrew Cherry;Michael Newton;Henrik Feldt;Marcus Griep;Tony Williams</Authors>
+    <Description>Monadic JSON serialization/deserialization library for F#</Description>
+    <Copyright>Copyright © Xyncro Ltd</Copyright>
+    <PackageLicenseUrl>https://github.com/xyncro/chiron/blob/master/LICENSE.md</PackageLicenseUrl>
+    <PackageProjectUrl>https://xyncro.tech/chiron</PackageProjectUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>$(PackageTags);functional;json;optics;f#;fsharp;serialization;rfc7159</PackageTags>
+    <!-- SourceLink related properties https://github.com/dotnet/SourceLink#using-sourcelink -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <AllowedOutputExtensionsInPackageBuildOutputFolder>$(AllowedOutputExtensionsInPackageBuildOutputFolder);.pdb</AllowedOutputExtensionsInPackageBuildOutputFolder>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0-*" PrivateAssets="All"/>
+  </ItemGroup>
+</Project>
