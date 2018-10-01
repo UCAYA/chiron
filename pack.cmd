@@ -1,0 +1,1 @@
+dotnet pack -c Release /p:Version=7.0.0-UCAYA
